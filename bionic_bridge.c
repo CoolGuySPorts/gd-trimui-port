@@ -6,8 +6,8 @@
 #include <errno.h>
 #include <math.h>
 #include <ctype.h>
+#include <dlfcn.h>
 
-// 1. Логирование Android
 int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     va_list ap;
     printf("[%s] ", tag ? tag : "GD");
@@ -23,20 +23,17 @@ int __android_log_write(int prio, const char *tag, const char *text) {
     return 0;
 }
 
-// 2. Ошибки Bionic -> Glibc
 int* __errno(void) {
     return __errno_location();
 }
 
-// 3. Потоки ввода-вывода Android (__sF)
-FILE __sF[3];
+FILE __sF;
 __attribute__((constructor)) static void init_sf(void) {
-    __sF[0] = *stdin;
-    __sF[1] = *stdout;
-    __sF[2] = *stderr;
+    __sF = *stdin;
+    __sF = *stdout;
+    __sF = *stderr;
 }
 
-// 4. Аварийные остановки и защита стека
 void android_set_abort_message(const char* msg) {
     fprintf(stderr, "[ABORT] %s\n", msg ? msg : "unknown");
 }
@@ -47,7 +44,6 @@ void __stack_chk_fail(void) {
     abort();
 }
 
-// 5. Математика и локаль из sys_imports.txt
 int __isnanf(float x) {
     return isnan(x);
 }
@@ -60,17 +56,26 @@ size_t __ctype_get_mb_cur_max(void) {
     return MB_CUR_MAX;
 }
 
-// 6. C++ ABI функции (из sys_imports.txt и ошибки libfmod.so)
+// Собственные определения C++ ABI с привязкой к версиям LIBC / LIBC_O
 void __cxa_pure_virtual(void) {
     fprintf(stderr, "[FATAL] Pure virtual function called!\n");
     abort();
 }
 
 void __cxa_finalize(void *d) {
-    // Безопасная заглушка при выгрузке .so
+    typedef void (*fn_t)(void*);
+    static fn_t real_fn = NULL;
+    if (!real_fn) real_fn = (fn_t)dlsym(RTLD_NEXT, "__cxa_finalize");
+    if (real_fn) real_fn(d);
 }
 
-extern int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle);
+int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle) {
+    typedef int (*fn_t)(void (*)(void *), void *, void *);
+    static fn_t real_fn = NULL;
+    if (!real_fn) real_fn = (fn_t)dlsym(RTLD_NEXT, "__cxa_atexit");
+    return real_fn ? real_fn(func, arg, dso_handle) : 0;
+}
+
 int __cxa_thread_atexit_impl(void (*func)(void *), void *arg, void *dso_handle) {
     return __cxa_atexit(func, arg, dso_handle);
 }
