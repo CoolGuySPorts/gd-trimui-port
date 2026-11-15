@@ -6,9 +6,7 @@ set(CMAKE_C_STANDARD 11)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED sdl2)
 
-file(GLOB SOURCES "*.c")
-
-add_executable(gd_loader ${SOURCES})
+add_executable(gd_loader main.c fake_jni.c bionic_bridge.c)
 
 target_include_directories(gd_loader PRIVATE ${SDL2_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_options(gd_loader PRIVATE -rdynamic)
