@@ -8,3 +8,18 @@ LIBC {
     android_set_abort_message;
     *;
 };
+
+LIBC_O {
+  global:
+    *;
+} LIBC;
+
+LIBC_P {
+  global:
+    *;
+} LIBC_O;
+
+LIBC_Q {
+  global:
+    *;
+} LIBC_P;
