@@ -14,9 +14,9 @@ jobs:
           sudo dpkg --add-architecture arm64
           sudo rm -f /etc/apt/sources.list.d/*
           sudo bash -c "cat > /etc/apt/sources.list << 'EOF'
-          deb [arch=amd64] http://ubuntu.com jammy main restricted universe multiverse
-          deb [arch=amd64] http://ubuntu.com jammy-updates main restricted universe multiverse
-          deb [arch=amd64] http://ubuntu.com jammy-security main restricted universe multiverse
+          deb [arch=amd64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse
+          deb [arch=amd64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse
+          deb [arch=amd64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse
           EOF"
           echo "deb [arch=arm64] $REPO jammy main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
           echo "deb [arch=arm64] $REPO jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
