@@ -13,6 +13,10 @@ LIBC {
 LIBC_O {
   global:
     __cxa_pure_virtual;
+    _Znwm;
+    _ZdlPv;
+    _Znam;
+    _ZdaPv;
 } LIBC;
 
 LIBC_P {
