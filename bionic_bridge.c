@@ -15,11 +15,13 @@ __asm__(".symver real_dlsym, dlsym@GLIBC_2.17");
 static void *h_libc = NULL;
 static void *h_libm = NULL;
 static void *h_libpt = NULL;
+static void *h_libz = NULL;
 
 static void init_handles(void) {
     if (!h_libc) h_libc = real_dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
     if (!h_libm) h_libm = real_dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
     if (!h_libpt) h_libpt = real_dlopen("libpthread.so.0", RTLD_LAZY | RTLD_GLOBAL);
+    if (!h_libz) h_libz = real_dlopen("libz.so.1", RTLD_LAZY | RTLD_GLOBAL);
 }
 
 void* resolve_glibc_sym(const char *name) {
@@ -28,6 +30,7 @@ void* resolve_glibc_sym(const char *name) {
     if (h_libc) sym = real_dlsym(h_libc, name);
     if (!sym && h_libm) sym = real_dlsym(h_libm, name);
     if (!sym && h_libpt) sym = real_dlsym(h_libpt, name);
+    if (!sym && h_libz) sym = real_dlsym(h_libz, name);
     if (!sym) sym = real_dlsym(RTLD_DEFAULT, name);
     return sym;
 }
@@ -59,7 +62,14 @@ int* __errno(void) {
     return fn();
 }
 
-__attribute__((used)) char __sF[768] = {0};
+int gettid(void) {
+    typedef long (*sys_t)(long, ...);
+    static sys_t fn = NULL;
+    if (!fn) fn = (sys_t)resolve_glibc_sym("syscall");
+    return fn ? (int)fn(178) : 1000;
+}
+
+__attribute__((used)) char __sF = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
