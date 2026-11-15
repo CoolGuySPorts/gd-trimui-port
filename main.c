@@ -22,6 +22,10 @@ static void* resolve_sym(void *h, const char *n1, const char *n2) {
 }
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
+    printf("[STEP 1] SDL_Init...\n");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) < 0) return 1;
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
@@ -30,6 +34,7 @@ int main(int argc, char *argv[]) {
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
     int w = 1280, h = 720;
+    printf("[STEP 2] Creating window...\n");
     SDL_Window *win = SDL_CreateWindow("GD", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
     if (!win) return 1;
 
@@ -43,21 +48,28 @@ int main(int argc, char *argv[]) {
         if (SDL_IsGameController(i) && (pad = SDL_GameControllerOpen(i))) break;
     }
 
+    printf("[STEP 3] Init fake JNI...\n");
     JavaVM *vm = NULL;
     JNIEnv *env = NULL;
     init_fake_jni(&vm, &env);
 
+    printf("[STEP 4] Loading libfmod.so...\n");
     void *fmod_h = dlopen("./libfmod.so", RTLD_LAZY | RTLD_GLOBAL);
     if (!fmod_h) fprintf(stderr, "fmod warn: %s\n", dlerror());
+    else printf("[STEP 4 OK] libfmod.so loaded!\n");
 
+    printf("[STEP 5] Loading libcocos2dcpp.so...\n");
     void *gd_h = dlopen("./libcocos2dcpp.so", RTLD_LAZY | RTLD_GLOBAL);
     if (!gd_h) {
         fprintf(stderr, "cocos err: %s\n", dlerror());
         return 1;
     }
+    printf("[STEP 5 OK] libcocos2dcpp.so loaded!\n");
 
+    printf("[STEP 6] Calling JNI_OnLoad...\n");
     JNI_OnLoad_t on_load = (JNI_OnLoad_t)dlsym(gd_h, "JNI_OnLoad");
     if (on_load) on_load(vm, NULL);
+    printf("[STEP 6 OK] JNI_OnLoad done!\n");
 
     nativeInit_t nInit = (nativeInit_t)resolve_sym(gd_h, "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeInit", NULL);
     nativeRender_t nRender = (nativeRender_t)resolve_sym(gd_h, "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeRender", NULL);
@@ -66,7 +78,10 @@ int main(int argc, char *argv[]) {
     nativeKeyDown_t nKey = (nativeKeyDown_t)resolve_sym(gd_h, "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeKeyDown", "Java_org_cocos2dx_lib_Cocos2dxGLSurfaceView_nativeKeyDown");
 
     if (!nInit || !nRender) return 1;
+
+    printf("[STEP 7] Calling nativeInit...\n");
     nInit(env, NULL, w, h);
+    printf("[STEP 7 OK] nativeInit done! Entering main loop...\n");
 
     bool run = true;
     SDL_Event e;
