@@ -1,43 +1,50 @@
 #define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
-#include <dlfcn.h>
+
+#define RTLD_LAZY   0x00001
+#define RTLD_GLOBAL 0x00100
+#define RTLD_DEFAULT ((void *) 0)
+
+extern void *real_dlopen(const char *file, int mode);
+extern void *real_dlsym(void *handle, const char *name);
+__asm__(".symver real_dlopen, dlopen@GLIBC_2.17");
+__asm__(".symver real_dlsym, dlsym@GLIBC_2.17");
 
 static void *h_libc = NULL;
 static void *h_libm = NULL;
 static void *h_libpt = NULL;
 
 static void init_handles(void) {
-    if (!h_libc) h_libc = dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
-    if (!h_libm) h_libm = dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
-    if (!h_libpt) h_libpt = dlopen("libpthread.so.0", RTLD_LAZY | RTLD_GLOBAL);
+    if (!h_libc) h_libc = real_dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if (!h_libm) h_libm = real_dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if (!h_libpt) h_libpt = real_dlopen("libpthread.so.0", RTLD_LAZY | RTLD_GLOBAL);
 }
 
 void* resolve_glibc_sym(const char *name) {
     init_handles();
     void *sym = NULL;
-    if (h_libc) sym = dlsym(h_libc, name);
-    if (!sym && h_libm) sym = dlsym(h_libm, name);
-    if (!sym && h_libpt) sym = dlsym(h_libpt, name);
-    if (!sym) sym = dlsym(RTLD_DEFAULT, name);
+    if (h_libc) sym = real_dlsym(h_libc, name);
+    if (!sym && h_libm) sym = real_dlsym(h_libm, name);
+    if (!sym && h_libpt) sym = real_dlsym(h_libpt, name);
+    if (!sym) sym = real_dlsym(RTLD_DEFAULT, name);
     return sym;
 }
 
 int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     typedef int (*vprintf_t)(const char*, va_list);
     typedef int (*printf_t)(const char*, ...);
-    static vprintf_t real_vprintf = NULL;
-    static printf_t real_printf = NULL;
-    if (!real_vprintf) real_vprintf = (vprintf_t)resolve_glibc_sym("vprintf");
-    if (!real_printf) real_printf = (printf_t)resolve_glibc_sym("printf");
-    if (real_printf) real_printf("[%s] ", tag ? tag : "GD");
+    static vprintf_t fn_vp = NULL;
+    static printf_t fn_p = NULL;
+    if (!fn_vp) fn_vp = (vprintf_t)resolve_glibc_sym("vprintf");
+    if (!fn_p) fn_p = (printf_t)resolve_glibc_sym("printf");
+    if (fn_p) fn_p("[%s] ", tag ? tag : "GD");
     va_list ap;
     va_start(ap, fmt);
-    int r = real_vprintf ? real_vprintf(fmt, ap) : 0;
+    int r = fn_vp ? fn_vp(fmt, ap) : 0;
     va_end(ap);
-    if (real_printf) real_printf("\n");
+    if (fn_p) fn_p("\n");
     return r;
 }
 
@@ -52,7 +59,7 @@ int* __errno(void) {
     return fn();
 }
 
-__attribute__((used)) char __sF[1024] = {0};
+__attribute__((used)) char __sF[768] = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
@@ -70,7 +77,6 @@ int __isnanf(float x) { return __builtin_isnan(x); }
 int __signbit(double x) { return __builtin_signbit(x); }
 size_t __ctype_get_mb_cur_max(void) { return 1; }
 
-// C++ ABI и операторы new/delete с привязкой к LIBC_O
 void __cxa_pure_virtual_impl(void) { __stack_chk_fail(); }
 __asm__(".symver __cxa_pure_virtual_impl, __cxa_pure_virtual@@LIBC_O");
 
@@ -81,7 +87,9 @@ void* op_new_impl(size_t sz) {
     return fn ? fn(sz ? sz : 1) : NULL;
 }
 __asm__(".symver op_new_impl, _Znwm@@LIBC_O");
-__asm__(".symver op_new_impl, _Znam@@LIBC_O");
+
+void* op_new_arr_impl(size_t sz) { return op_new_impl(sz); }
+__asm__(".symver op_new_arr_impl, _Znam@@LIBC_O");
 
 void op_del_impl(void *p) {
     typedef void (*free_t)(void*);
@@ -90,7 +98,9 @@ void op_del_impl(void *p) {
     if (fn && p) fn(p);
 }
 __asm__(".symver op_del_impl, _ZdlPv@@LIBC_O");
-__asm__(".symver op_del_impl, _ZdaPv@@LIBC_O");
+
+void op_del_arr_impl(void *p) { op_del_impl(p); }
+__asm__(".symver op_del_arr_impl, _ZdaPv@@LIBC_O");
 
 void __cxa_finalize(void *d) {
     typedef void (*fn_t)(void*);
