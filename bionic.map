@@ -1,12 +1,5 @@
 LIBC {
   global:
-    __sF;
-    __errno;
-    __cxa_finalize;
-    __cxa_atexit;
-    __cxa_thread_atexit_impl;
-    __android_log_print;
-    __android_log_write;
     *;
 };
 
