@@ -21,6 +21,7 @@ LIBC_O {
   global:
     __cxa_pure_virtual;
     __cxa_finalize;
+    __cxa_atexit;
     *;
 } LIBC;
 
