@@ -15,6 +15,12 @@ jobs:
           apt-get update
           apt-get install -y build-essential cmake pkg-config libsdl2-dev libgles2-mesa-dev
 
+      - name: Generate syms.def
+        run: |
+          for s in abort abs accept access acos acosf alarm asinf atan2 atan2f atanf atof atoi atoll basename bind bsearch btowc calloc chmod clock clock_gettime close closedir closelog connect cos cosf difftime dl_iterate_phdr dlclose dlerror dlopen dlsym dup2 execl exit exp expf fclose fcntl fdopen feof ferror fflush fgets fileno fmax fmin fmod fmodf fopen fork fprintf fputc fputs fread free freeaddrinfo freelocale frexp fseek fseeko fstat ftell ftello fwrite gai_strerror getaddrinfo getauxval getc getegid getenv geteuid getgid gethostbyname gethostname getnameinfo getpeername getpid getpwuid getpwuid_r getsockname getsockopt gettimeofday getuid gmtime gmtime_r if_nametoindex inet_ntop inet_pton initgroups ioctl isalnum isalpha isascii isdigit_l isgraph islower islower_l isprint isspace isupper isupper_l iswalpha_l iswblank_l iswcntrl_l iswdigit_l iswlower_l iswprint_l iswpunct_l iswspace_l iswupper_l iswxdigit_l isxdigit isxdigit_l kill listen localeconv localtime log10 log logf longjmp lround lseek madvise malloc mbrlen mbrtowc mbsnrtowcs mbsrtowcs mbtowc memchr memcmp memcpy memmove memrchr memset mkdir mlock mmap modf mprotect munmap nanosleep newlocale open opendir openlog pipe poll pow powf printf pthread_attr_init pthread_cond_broadcast pthread_cond_destroy pthread_cond_init pthread_cond_signal pthread_cond_timedwait pthread_cond_wait pthread_create pthread_detach pthread_equal pthread_getspecific pthread_join pthread_key_create pthread_key_delete pthread_mutex_destroy pthread_mutex_init pthread_mutex_lock pthread_mutex_trylock pthread_mutex_unlock pthread_mutexattr_destroy pthread_mutexattr_init pthread_mutexattr_settype pthread_once pthread_rwlock_destroy pthread_rwlock_init pthread_rwlock_rdlock pthread_rwlock_unlock pthread_rwlock_wrlock pthread_self pthread_setspecific qsort rand read readdir realloc recv recvfrom remove rename sched_yield send sendto setbuf setgid setjmp setlocale setsockopt setuid shutdown sigaction sigaddset sigdelset sigemptyset sigfillset siglongjmp signal sigprocmask sigsetjmp sinf snprintf socket socketpair sprintf sqrt sqrtf srand sscanf stat strcasecmp strcat strchr strcmp strcoll_l strcpy strcspn strdup strerror strerror_r strftime strftime_l strlen strncasecmp strncmp strncpy strpbrk strrchr strspn strstr strtod strtof strtok strtok_r strtol strtold strtold_l strtoll strtoll_l strtoul strtoull strtoull_l strxfrm_l swprintf sysconf syslog tanf tcgetattr tcsetattr time tolower tolower_l toupper toupper_l towlower_l towupper_l umask ungetc uselocale usleep vasprintf vfprintf vsnprintf vsscanf waitpid wcrtomb wcscoll_l wcslen wcsnrtombs wcstod wcstof wcstol wcstold wcstoll wcstoul wcstoull wcsxfrm_l wctob wmemchr wmemcmp wmemcpy wmemmove wmemset write; do
+            echo "X($s)" >> syms.def
+          done
+
       - name: Build Binary
         run: |
           mkdir -p build && cd build
@@ -26,4 +32,4 @@ jobs:
         with:
           name: gd_loader_arm64
           path: build/
-          
+         
