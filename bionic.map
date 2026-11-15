@@ -7,6 +7,8 @@ LIBC {
 LIBC_O {
   global:
     __cxa_pure_virtual;
+    __cxa_guard_acquire;
+    __cxa_guard_release;
     _Znwm;
     _ZdlPv;
     _Znam;
