@@ -7,24 +7,30 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup ARM64 Cross-Compiler and SDL2
-  run: |
+        run: |
           sudo dpkg --add-architecture arm64
           sudo sed -i 's/deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
-          REPO="http://ports"
-          REPO="${REPO}://"
-          cat <<EOF | sudo tee -a /etc/apt/sources.list
-          deb [arch=arm64] $REPO jammy main restricted universe multiverse
-          deb [arch=arm64] $REPO jammy-updates main restricted universe multiverse
-          deb [arch=arm64] $REPO jammy-security main restricted universe multiverse
+          cat <<EOF | sudo tee /etc/apt/sources.list.d/arm64.list
+          deb [arch=arm64] http://ubuntu.com jammy main restricted universe multiverse
+          deb [arch=arm64] http://ubuntu.com jammy-updates main restricted universe multiverse
+          deb [arch=arm64] http://ubuntu.com jammy-security main restricted universe multiverse
           EOF
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu cmake libsdl2-dev:arm64 libgles2-mesa-dev:arm64
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake libsdl2-dev:arm64 libgles2-mesa-dev:arm64
 
       - name: Build Binary
         run: |
-          mkdir build && cd build
-          cmake .. -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
           make -j4
 
       - name: Upload Artifact
