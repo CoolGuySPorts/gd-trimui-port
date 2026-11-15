@@ -1,5 +1,9 @@
 LIBC {
   global:
+    __sF;
+    __errno;
+    __android_log_print;
+    __android_log_write;
     *;
 };
 
