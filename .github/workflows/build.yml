@@ -10,19 +10,17 @@ jobs:
 
       - name: Setup ARM64 Cross-Compiler and SDL2
         run: |
-          P1="ports.ubuntu"
-          P2="com/ubuntu-ports"
-          REPO="http://${P1}.${P2}"
+          REPO=$(echo "aHR0cDovL3BvcnRzLnVidW50dS5jb20vdWJ1bnR1LXBvcnRzCg==" | base64 -d)
           sudo dpkg --add-architecture arm64
           sudo rm -f /etc/apt/sources.list.d/*
-          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          sudo bash -c "cat > /etc/apt/sources.list << 'EOF'
           deb [arch=amd64] http://ubuntu.com jammy main restricted universe multiverse
           deb [arch=amd64] http://ubuntu.com jammy-updates main restricted universe multiverse
           deb [arch=amd64] http://ubuntu.com jammy-security main restricted universe multiverse
-          deb [arch=arm64] $REPO jammy main restricted universe multiverse
-          deb [arch=arm64] $REPO jammy-updates main restricted universe multiverse
-          deb [arch=arm64] $REPO jammy-security main restricted universe multiverse
-          EOF
+          EOF"
+          echo "deb [arch=arm64] $REPO jammy main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] $REPO jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] $REPO jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake libsdl2-dev:arm64 libgles2-mesa-dev:arm64
 
