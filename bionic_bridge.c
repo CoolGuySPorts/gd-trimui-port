@@ -83,16 +83,18 @@ void __assert2(const char *file, int line, const char *func, const char *expr) {
     while(1);
 }
 
-int __cxa_guard_acquire(uint64_t *gv) {
+int cxa_guard_acq_impl(uint64_t *gv) {
     if (*(uint8_t*)gv != 0) return 0;
     return 1;
 }
+__asm__(".symver cxa_guard_acq_impl, __cxa_guard_acquire@@LIBC_O");
 
-void __cxa_guard_release(uint64_t *gv) {
+void cxa_guard_rel_impl(uint64_t *gv) {
     *(uint8_t*)gv = 1;
 }
+__asm__(".symver cxa_guard_rel_impl, __cxa_guard_release@@LIBC_O");
 
-__attribute__((used)) char __sF = {0};
+__attribute__((used)) char __sF[1024] = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
