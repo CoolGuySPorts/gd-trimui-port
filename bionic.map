@@ -1,5 +1,6 @@
 LIBC {
   global:
+    __sF;
     *;
 };
 
@@ -13,11 +14,7 @@ LIBC_O {
 } LIBC;
 
 LIBC_P {
-  global:
-    *;
 } LIBC_O;
 
 LIBC_Q {
-  global:
-    *;
 } LIBC_P;
