@@ -3,80 +3,111 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdint.h>
-#include <errno.h>
-#include <math.h>
-#include <ctype.h>
 #include <dlfcn.h>
 
+static void *h_libc = NULL;
+static void *h_libm = NULL;
+static void *h_libpt = NULL;
+
+static void init_handles(void) {
+    if (!h_libc) h_libc = dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if (!h_libm) h_libm = dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
+    if (!h_libpt) h_libpt = dlopen("libpthread.so.0", RTLD_LAZY | RTLD_GLOBAL);
+}
+
+void* resolve_glibc_sym(const char *name) {
+    init_handles();
+    void *sym = NULL;
+    if (h_libc) sym = dlsym(h_libc, name);
+    if (!sym && h_libm) sym = dlsym(h_libm, name);
+    if (!sym && h_libpt) sym = dlsym(h_libpt, name);
+    if (!sym) sym = dlsym(RTLD_DEFAULT, name);
+    return sym;
+}
+
 int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
+    typedef int (*vprintf_t)(const char*, va_list);
+    typedef int (*printf_t)(const char*, ...);
+    static vprintf_t real_vprintf = NULL;
+    static printf_t real_printf = NULL;
+    if (!real_vprintf) real_vprintf = (vprintf_t)resolve_glibc_sym("vprintf");
+    if (!real_printf) real_printf = (printf_t)resolve_glibc_sym("printf");
+    if (real_printf) real_printf("[%s] ", tag ? tag : "GD");
     va_list ap;
-    printf("[%s] ", tag ? tag : "GD");
     va_start(ap, fmt);
-    int r = vprintf(fmt, ap);
+    int r = real_vprintf ? real_vprintf(fmt, ap) : 0;
     va_end(ap);
-    printf("\n");
+    if (real_printf) real_printf("\n");
     return r;
 }
 
 int __android_log_write(int prio, const char *tag, const char *text) {
-    printf("[%s] %s\n", tag ? tag : "GD", text ? text : "");
-    return 0;
+    return __android_log_print(prio, tag, "%s", text ? text : "");
 }
 
-int* __errno(void) { return __errno_location(); }
-
-__attribute__((used)) struct { FILE f0, f1, f2; } __sF = {0};
-__attribute__((constructor)) static void init_sf(void) {
-    __sF.f0 = *stdin;
-    __sF.f1 = *stdout;
-    __sF.f2 = *stderr;
+int* __errno(void) {
+    typedef int* (*fn_t)(void);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)resolve_glibc_sym("__errno_location");
+    return fn();
 }
 
-void android_set_abort_message(const char* msg) {
-    fprintf(stderr, "[ABORT] %s\n", msg ? msg : "unknown");
-}
-
+__attribute__((used)) char __sF[1024] = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
+
 void __stack_chk_fail(void) {
     typedef void (*fn_t)(void);
-    fn_t fn = (fn_t)dlsym(RTLD_NEXT, "abort");
+    fn_t fn = (fn_t)resolve_glibc_sym("abort");
     if (fn) fn();
     while(1);
 }
 
-int __isnanf(float x) { return isnan(x); }
-int __signbit(double x) { return signbit(x); }
-size_t __ctype_get_mb_cur_max(void) { return MB_CUR_MAX; }
-
-void __cxa_pure_virtual_impl(void) {
-    fprintf(stderr, "[FATAL] Pure virtual call!\n");
-    __stack_chk_fail();
+void android_set_abort_message(const char* msg) {
+    __android_log_print(6, "ABORT", "%s", msg ? msg : "unknown");
 }
+
+int __isnanf(float x) { return __builtin_isnan(x); }
+int __signbit(double x) { return __builtin_signbit(x); }
+size_t __ctype_get_mb_cur_max(void) { return 1; }
+
+// C++ ABI и операторы new/delete с привязкой к LIBC_O
+void __cxa_pure_virtual_impl(void) { __stack_chk_fail(); }
 __asm__(".symver __cxa_pure_virtual_impl, __cxa_pure_virtual@@LIBC_O");
+
+void* op_new_impl(size_t sz) {
+    typedef void* (*malloc_t)(size_t);
+    static malloc_t fn = NULL;
+    if (!fn) fn = (malloc_t)resolve_glibc_sym("malloc");
+    return fn ? fn(sz ? sz : 1) : NULL;
+}
+__asm__(".symver op_new_impl, _Znwm@@LIBC_O");
+__asm__(".symver op_new_impl, _Znam@@LIBC_O");
+
+void op_del_impl(void *p) {
+    typedef void (*free_t)(void*);
+    static free_t fn = NULL;
+    if (!fn) fn = (free_t)resolve_glibc_sym("free");
+    if (fn && p) fn(p);
+}
+__asm__(".symver op_del_impl, _ZdlPv@@LIBC_O");
+__asm__(".symver op_del_impl, _ZdaPv@@LIBC_O");
 
 void __cxa_finalize(void *d) {
     typedef void (*fn_t)(void*);
     static fn_t fn = NULL;
-    if (!fn) fn = (fn_t)dlsym(RTLD_NEXT, "__cxa_finalize");
+    if (!fn) fn = (fn_t)resolve_glibc_sym("__cxa_finalize");
     if (fn) fn(d);
 }
 
 int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle) {
     typedef int (*fn_t)(void (*)(void *), void *, void *);
     static fn_t fn = NULL;
-    if (!fn) fn = (fn_t)dlsym(RTLD_NEXT, "__cxa_atexit");
+    if (!fn) fn = (fn_t)resolve_glibc_sym("__cxa_atexit");
     return fn ? fn(func, arg, dso_handle) : 0;
 }
 
 int __cxa_thread_atexit_impl(void (*func)(void *), void *arg, void *dso_handle) {
     return __cxa_atexit(func, arg, dso_handle);
-}
-
-void* resolve_glibc_sym(const char *name) {
-    void *sym = dlsym(RTLD_NEXT, name);
-    if (!sym) sym = dlsym(RTLD_DEFAULT, name);
-    if (!sym) fprintf(stderr, "[WARN] Unresolved glibc sym: %s\n", name);
-    return sym;
 }
 
 #define X(sym) \
