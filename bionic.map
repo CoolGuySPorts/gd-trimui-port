@@ -1,0 +1,10 @@
+LIBC {
+  global:
+    __android_log_print;
+    __errno;
+    __sF;
+    __isnanf;
+    __signbit;
+    android_set_abort_message;
+    *;
+};
