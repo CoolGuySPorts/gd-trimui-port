@@ -25,7 +25,7 @@ int __android_log_write(int prio, const char *tag, const char *text) {
 
 int* __errno(void) { return __errno_location(); }
 
-struct { FILE f0, f1, f2; } __sF;
+__attribute__((used)) struct { FILE f0, f1, f2; } __sF = {0};
 __attribute__((constructor)) static void init_sf(void) {
     __sF.f0 = *stdin;
     __sF.f1 = *stdout;
