@@ -25,5 +25,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gd_loader_arm64
-          path: build/gd_loader
+          path: build/
           
