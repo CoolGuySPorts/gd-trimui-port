@@ -1,28 +1,11 @@
 LIBC {
   global:
-    __android_log_print;
-    __android_log_write;
-    __errno;
-    __sF;
-    __isnanf;
-    __signbit;
-    __ctype_get_mb_cur_max;
-    __stack_chk_guard;
-    __stack_chk_fail;
-    __cxa_pure_virtual;
-    __cxa_finalize;
-    __cxa_atexit;
-    __cxa_thread_atexit_impl;
-    android_set_abort_message;
     *;
 };
 
 LIBC_O {
   global:
     __cxa_pure_virtual;
-    __cxa_finalize;
-    __cxa_atexit;
-    *;
 } LIBC;
 
 LIBC_P {
