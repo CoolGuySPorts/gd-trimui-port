@@ -69,6 +69,29 @@ int gettid(void) {
     return fn ? (int)fn(178) : 1000;
 }
 
+void __FD_SET_chk(int fd, void *set, size_t set_size) {
+    if (fd >= 0 && (size_t)(fd / 8) < set_size) {
+        ((uint8_t*)set)[fd / 8] |= (1U << (fd % 8));
+    }
+}
+
+void __assert2(const char *file, int line, const char *func, const char *expr) {
+    __android_log_print(6, "ASSERT", "%s:%d %s: %s", file ? file : "?", line, func ? func : "?", expr ? expr : "?");
+    typedef void (*fn_t)(void);
+    fn_t fn = (fn_t)resolve_glibc_sym("abort");
+    if (fn) fn();
+    while(1);
+}
+
+int __cxa_guard_acquire(uint64_t *gv) {
+    if (*(uint8_t*)gv != 0) return 0;
+    return 1;
+}
+
+void __cxa_guard_release(uint64_t *gv) {
+    *(uint8_t*)gv = 1;
+}
+
 __attribute__((used)) char __sF = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
