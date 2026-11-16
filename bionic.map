@@ -1,6 +1,18 @@
 LIBC {
   global:
     __sF;
+    __cxa_pure_virtual;
+    __cxa_guard_acquire;
+    __cxa_guard_release;
+    __cxa_guard_abort;
+    _Znwm;
+    _Znam;
+    _ZnwmRKSt9nothrow_t;
+    _ZnamRKSt9nothrow_t;
+    _ZdlPv;
+    _ZdaPv;
+    _ZdlPvm;
+    _ZdaPvm;
     *;
 };
 
@@ -9,10 +21,15 @@ LIBC_O {
     __cxa_pure_virtual;
     __cxa_guard_acquire;
     __cxa_guard_release;
+    __cxa_guard_abort;
     _Znwm;
-    _ZdlPv;
     _Znam;
+    _ZnwmRKSt9nothrow_t;
+    _ZnamRKSt9nothrow_t;
+    _ZdlPv;
     _ZdaPv;
+    _ZdlPvm;
+    _ZdaPvm;
 } LIBC;
 
 LIBC_P {
