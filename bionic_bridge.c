@@ -2,7 +2,6 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
-#include <pthread.h>
 
 #define RTLD_LAZY 1
 #define RTLD_GLOBAL 0x00100
@@ -16,21 +15,38 @@ __asm__(".symver real_dlopen, dlopen@GLIBC_2.17");
 static void *h_libc = NULL;
 static void *h_libm = NULL;
 static void *h_libpthread = NULL;
+static void *h_libdl = NULL;
+static void *h_librt = NULL;
 
 void* resolve_glibc_sym(const char *name) {
     if (!h_libc) {
         h_libc = real_dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
         h_libm = real_dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
         h_libpthread = real_dlopen("libpthread.so.0", RTLD_LAZY | RTLD_GLOBAL);
+        h_libdl = real_dlopen("libdl.so.2", RTLD_LAZY | RTLD_GLOBAL);
+        h_librt = real_dlopen("librt.so.1", RTLD_LAZY | RTLD_GLOBAL);
     }
     void *sym = NULL;
     if (h_libc) sym = real_dlsym(h_libc, name);
     if (!sym && h_libm) sym = real_dlsym(h_libm, name);
     if (!sym && h_libpthread) sym = real_dlsym(h_libpthread, name);
+    if (!sym && h_libdl) sym = real_dlsym(h_libdl, name);
+    if (!sym && h_librt) sym = real_dlsym(h_librt, name);
+
+    if (!sym && h_libc) {
+        typedef int (*printf_t)(const char*, ...);
+        typedef int (*fflush_t)(void*);
+        static printf_t fn_p = NULL;
+        static fflush_t fn_fl = NULL;
+        if (!fn_p) fn_p = (printf_t)real_dlsym(h_libc, "printf");
+        if (!fn_fl) fn_fl = (fflush_t)real_dlsym(h_libc, "fflush");
+        if (fn_p) fn_p("[MISSING SYM] %s\n", name ? name : "null");
+        if (fn_fl) fn_fl(NULL);
+    }
     return sym;
 }
 
-int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
+int __android_log_vprint(int prio, const char *tag, const char *fmt, va_list ap) {
     typedef int (*vprintf_t)(const char*, va_list);
     typedef int (*printf_t)(const char*, ...);
     typedef int (*fflush_t)(void*);
@@ -41,17 +57,33 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     if (!fn_p) fn_p = (printf_t)resolve_glibc_sym("printf");
     if (!fn_fl) fn_fl = (fflush_t)resolve_glibc_sym("fflush");
     if (fn_p) fn_p("[%s] ", tag ? tag : "GD");
-    va_list ap;
-    va_start(ap, fmt);
     int r = fn_vp ? fn_vp(fmt, ap) : 0;
-    va_end(ap);
     if (fn_p) fn_p("\n");
     if (fn_fl) fn_fl(NULL);
     return r;
 }
 
+int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int r = __android_log_vprint(prio, tag, fmt, ap);
+    va_end(ap);
+    return r;
+}
+
 int __android_log_write(int prio, const char *tag, const char *text) {
     return __android_log_print(prio, tag, "%s", text ? text : "");
+}
+
+void __android_log_assert(const char *cond, const char *tag, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    __android_log_vprint(6, tag ? tag : "ASSERT", fmt ? fmt : (cond ? cond : "assert"), ap);
+    va_end(ap);
+    typedef void (*fn_t)(void);
+    fn_t fn = (fn_t)resolve_glibc_sym("abort");
+    if (fn) fn();
+    while(1);
 }
 
 int* __errno(void) {
@@ -82,37 +114,28 @@ void __assert2(const char *file, int line, const char *func, const char *expr) {
     while(1);
 }
 
-static pthread_mutex_t guard_mtx = PTHREAD_MUTEX_INITIALIZER;
-
-int cxa_guard_acq_impl(uint64_t *gv) {
-    typedef int (*lock_t)(pthread_mutex_t*);
-    typedef int (*unlock_t)(pthread_mutex_t*);
-    static lock_t fn_l = NULL;
-    static unlock_t fn_u = NULL;
-    if (!fn_l) fn_l = (lock_t)resolve_glibc_sym("pthread_mutex_lock");
-    if (!fn_u) fn_u = (unlock_t)resolve_glibc_sym("pthread_mutex_unlock");
-
-    if (__atomic_load_n((uint8_t*)gv, __ATOMIC_ACQUIRE) != 0) return 0;
-    if (fn_l) fn_l(&guard_mtx);
-    if (*(uint8_t*)gv != 0) {
-        if (fn_u) fn_u(&guard_mtx);
-        return 0;
+/* Потокобезопасные атомарные гарды C++ без зависимости от pthread */
+int __cxa_guard_acquire(uint64_t *gv) {
+    uint8_t *b = (uint8_t*)gv;
+    if (__atomic_load_n(b, __ATOMIC_ACQUIRE) == 1) return 0;
+    uint8_t expected = 0;
+    while (!__atomic_compare_exchange_n(b, &expected, 2, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        if (expected == 1) return 0;
+        expected = 0;
+        __asm__ volatile("yield" ::: "memory");
     }
     return 1;
 }
-__asm__(".symver cxa_guard_acq_impl, __cxa_guard_acquire@@LIBC_O");
 
-void cxa_guard_rel_impl(uint64_t *gv) {
-    typedef int (*unlock_t)(pthread_mutex_t*);
-    static unlock_t fn_u = NULL;
-    if (!fn_u) fn_u = (unlock_t)resolve_glibc_sym("pthread_mutex_unlock");
-
+void __cxa_guard_release(uint64_t *gv) {
     __atomic_store_n((uint8_t*)gv, 1, __ATOMIC_RELEASE);
-    if (fn_u) fn_u(&guard_mtx);
 }
-__asm__(".symver cxa_guard_rel_impl, __cxa_guard_release@@LIBC_O");
 
-__attribute__((used, aligned(16))) char __sF[512] = {0};
+void __cxa_guard_abort(uint64_t *gv) {
+    __atomic_store_n((uint8_t*)gv, 0, __ATOMIC_RELEASE);
+}
+
+__attribute__((used, aligned(16))) char __sF = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
@@ -131,30 +154,80 @@ int __isnanf(float x) { return __builtin_isnan(x); }
 int __signbit(double x) { return __builtin_signbit(x); }
 size_t __ctype_get_mb_cur_max(void) { return 1; }
 
-void __cxa_pure_virtual_impl(void) { __stack_chk_fail(); }
-__asm__(".symver __cxa_pure_virtual_impl, __cxa_pure_virtual@@LIBC_O");
+void __cxa_pure_virtual(void) { __stack_chk_fail(); }
 
-void* op_new_impl(size_t sz) {
+/* Полный набор C++ operator new / delete */
+void* _Znwm(size_t sz) {
     typedef void* (*malloc_t)(size_t);
     static malloc_t fn = NULL;
     if (!fn) fn = (malloc_t)resolve_glibc_sym("malloc");
     return fn ? fn(sz ? sz : 1) : NULL;
 }
-__asm__(".symver op_new_impl, _Znwm@@LIBC_O");
 
-void* op_new_arr_impl(size_t sz) { return op_new_impl(sz); }
-__asm__(".symver op_new_arr_impl, _Znam@@LIBC_O");
+void* _Znam(size_t sz) { return _Znwm(sz); }
+void* _ZnwmRKSt9nothrow_t(size_t sz, const void *nt) { (void)nt; return _Znwm(sz); }
+void* _ZnamRKSt9nothrow_t(size_t sz, const void *nt) { (void)nt; return _Znwm(sz); }
 
-void op_del_impl(void *p) {
+void _ZdlPv(void *p) {
     typedef void (*free_t)(void*);
     static free_t fn = NULL;
     if (!fn) fn = (free_t)resolve_glibc_sym("free");
     if (fn && p) fn(p);
 }
-__asm__(".symver op_del_impl, _ZdlPv@@LIBC_O");
 
-void op_del_arr_impl(void *p) { op_del_impl(p); }
-__asm__(".symver op_del_arr_impl, _ZdaPv@@LIBC_O");
+void _ZdaPv(void *p) { _ZdlPv(p); }
+void _ZdlPvm(void *p, size_t sz) { (void)sz; _ZdlPv(p); }
+void _ZdaPvm(void *p, size_t sz) { (void)sz; _ZdlPv(p); }
+
+/* Реализации BSD/Bionic функций, которых может не быть в glibc 2.27-2.31 */
+size_t strlcpy(char *dst, const char *src, size_t dsize) {
+    const char *osrc = src;
+    size_t nleft = dsize;
+    if (nleft != 0) {
+        while (--nleft != 0) {
+            if ((*dst++ = *src++) == '\0') break;
+        }
+    }
+    if (nleft == 0) {
+        if (dsize != 0) *dst = '\0';
+        while (*src++);
+    }
+    return (src - osrc - 1);
+}
+
+size_t strlcat(char *dst, const char *src, size_t dsize) {
+    const char *odst = dst;
+    const char *osrc = src;
+    size_t n = dsize;
+    while (n-- != 0 && *dst != '\0') dst++;
+    size_t dlen = dst - odst;
+    n = dsize - dlen;
+    if (n-- == 0) return (dlen + strlcpy((char*)"", src, 0));
+    while (*src != '\0') {
+        if (n != 0) { *dst++ = *src; n--; }
+        src++;
+    }
+    *dst = '\0';
+    return (dlen + (src - osrc));
+}
+
+static uint64_t rng_state = 0x123456789abcdef0ULL;
+uint32_t arc4random(void) {
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 7;
+    rng_state ^= rng_state << 17;
+    return (uint32_t)(rng_state >> 32);
+}
+
+void arc4random_buf(void *buf, size_t nbytes) {
+    uint8_t *p = (uint8_t*)buf;
+    for (size_t i = 0; i < nbytes; i++) p[i] = (uint8_t)arc4random();
+}
+
+uint32_t arc4random_uniform(uint32_t upper_bound) {
+    if (upper_bound < 2) return 0;
+    return arc4random() % upper_bound;
+}
 
 void __cxa_finalize(void *d) {
     typedef void (*fn_t)(void*);
