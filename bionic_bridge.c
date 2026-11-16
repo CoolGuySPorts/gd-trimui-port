@@ -112,7 +112,7 @@ void cxa_guard_rel_impl(uint64_t *gv) {
 }
 __asm__(".symver cxa_guard_rel_impl, __cxa_guard_release@@LIBC_O");
 
-__attribute__((used, aligned(16))) char __sF = {0};
+__attribute__((used, aligned(16))) char __sF[512] = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
