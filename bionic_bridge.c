@@ -47,7 +47,7 @@ void* resolve_glibc_sym(const char *name) {
     return sym;
 }
 
-int __android_log_vprint(int prio, const char *tag, const char *fmt, va_list ap) {
+int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     typedef int (*vprintf_t)(const char*, va_list);
     typedef int (*printf_t)(const char*, ...);
     typedef int (*fflush_t)(void*);
@@ -58,17 +58,12 @@ int __android_log_vprint(int prio, const char *tag, const char *fmt, va_list ap)
     if (!fn_p) fn_p = (printf_t)resolve_glibc_sym("printf");
     if (!fn_fl) fn_fl = (fflush_t)resolve_glibc_sym("fflush");
     if (fn_p) fn_p("[%s] ", tag ? tag : "GD");
-    int r = fn_vp ? fn_vp(fmt, ap) : 0;
-    if (fn_p) fn_p("\n");
-    if (fn_fl) fn_fl(NULL);
-    return r;
-}
-
-int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    int r = __android_log_vprint(prio, tag, fmt, ap);
+    int r = fn_vp ? fn_vp(fmt, ap) : 0;
     va_end(ap);
+    if (fn_p) fn_p("\n");
+    if (fn_fl) fn_fl(NULL);
     return r;
 }
 
@@ -183,3 +178,24 @@ int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle) {
 int __cxa_thread_atexit_impl(void (*func)(void *), void *arg, void *dso_handle) {
     return __cxa_atexit(func, arg, dso_handle);
 }
+
+#define X(sym) \
+    __asm__( \
+        ".pushsection .bss\n\t.align 3\n\t.Lptr_" #sym ": .quad 0\n\t.popsection\n\t" \
+        ".pushsection .rodata\n\t.Lstr_" #sym ": .asciz \"" #sym "\"\n\t.popsection\n\t" \
+        ".pushsection .text\n\t.global " #sym "\n\t.type " #sym ", %function\n\t" \
+        #sym ":\n\t" \
+        "adrp x16, .Lptr_" #sym "\n\tldr x16, [x16, :lo12:.Lptr_" #sym "]\n\tcbz x16, 1f\n\tbr x16\n\t" \
+        "1:\n\tstp x29, x30, [sp, #-176]!\n\tmov x29, sp\n\t" \
+        "stp x0, x1, [sp, #16]\n\tstp x2, x3, [sp, #32]\n\tstp x4, x5, [sp, #48]\n\tstp x6, x7, [sp, #64]\n\tstr x8, [sp, #80]\n\t" \
+        "stp d0, d1, [sp, #96]\n\tstp d2, d3, [sp, #112]\n\tstp d4, d5, [sp, #128]\n\tstp d6, d7, [sp, #144]\n\t" \
+        "adrp x0, .Lstr_" #sym "\n\tadd x0, x0, :lo12:.Lstr_" #sym "\n\t" \
+        "bl resolve_glibc_sym\n\tmov x16, x0\n\t" \
+        "adrp x17, .Lptr_" #sym "\n\tstr x16, [x17, :lo12:.Lptr_" #sym "]\n\t" \
+        "ldp x0, x1, [sp, #16]\n\tldp x2, x3, [sp, #32]\n\tldp x4, x5, [sp, #48]\n\tldp x6, x7, [sp, #64]\n\tldr x8, [sp, #80]\n\t" \
+        "ldp d0, d1, [sp, #96]\n\tldp d2, d3, [sp, #112]\n\tldp d4, d5, [sp, #128]\n\tldp d6, d7, [sp, #144]\n\t" \
+        "ldp x29, x30, [sp], #176\n\tcbz x16, 2f\n\tbr x16\n\t2: mov x0, #0\n\tret\n\t.popsection\n\t" \
+    );
+
+#include "syms.def"
+#undef X
