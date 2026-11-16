@@ -5,8 +5,8 @@
 #include <stdarg.h>
 #include <sys/stat.h>
 
-static void* fake_jni_table;
-static void* fake_vm_table;
+static void* fake_jni_table[300];
+static void* fake_vm_table[16];
 static JNIEnv global_env = (JNIEnv)fake_jni_table;
 static JavaVM global_vm = (JavaVM)fake_vm_table;
 
@@ -116,35 +116,35 @@ static jint vm_DetachCurrentThread(JavaVM *vm) { return 0; }
 
 void init_fake_jni(JavaVM **out_vm, JNIEnv **out_env) {
     for (int i = 0; i < 300; i++) fake_jni_table[i] = (void*)jni_GenericZero;
-    fake_jni_table = (void*)jni_GetVersion;
-    fake_jni_table = (void*)jni_FindClass;
-    fake_jni_table = (void*)jni_ExceptionCheck;
-    fake_jni_table = (void*)jni_ExceptionClear;
-    fake_jni_table = (void*)jni_PushLocalFrame;
-    fake_jni_table = (void*)jni_PopLocalFrame;
-    fake_jni_table = (void*)jni_NewGlobalRef;
-    fake_jni_table = (void*)jni_DeleteGlobalRef;
-    fake_jni_table = (void*)jni_DeleteLocalRef;
-    fake_jni_table = (void*)jni_NewLocalRef;
-    fake_jni_table = (void*)jni_EnsureLocalCapacity;
-    fake_jni_table = (void*)jni_GetObjectClass;
-    fake_jni_table = (void*)jni_GetMethodID;
-    fake_jni_table = (void*)jni_CallVoidMethod;
-    fake_jni_table = (void*)jni_GetStaticMethodID;
-    fake_jni_table = (void*)jni_CallStaticObjectMethod;
-    fake_jni_table = (void*)jni_CallStaticObjectMethodV;
-    fake_jni_table = (void*)jni_CallStaticBooleanMethod;
-    fake_jni_table = (void*)jni_CallStaticIntMethod;
-    fake_jni_table = (void*)jni_CallStaticVoidMethod;
-    fake_jni_table = (void*)jni_NewStringUTF;
-    fake_jni_table = (void*)jni_GetStringUTFLength;
-    fake_jni_table = (void*)jni_GetStringUTFChars;
-    fake_jni_table = (void*)jni_ReleaseStringUTFChars;
+    fake_jni_table[4] = (void*)jni_GetVersion;
+    fake_jni_table[6] = (void*)jni_FindClass;
+    fake_jni_table[15] = (void*)jni_ExceptionCheck;
+    fake_jni_table[16] = (void*)jni_ExceptionClear;
+    fake_jni_table[19] = (void*)jni_PushLocalFrame;
+    fake_jni_table[20] = (void*)jni_PopLocalFrame;
+    fake_jni_table[21] = (void*)jni_NewGlobalRef;
+    fake_jni_table[22] = (void*)jni_DeleteGlobalRef;
+    fake_jni_table[23] = (void*)jni_DeleteLocalRef;
+    fake_jni_table[25] = (void*)jni_NewLocalRef;
+    fake_jni_table[26] = (void*)jni_EnsureLocalCapacity;
+    fake_jni_table[31] = (void*)jni_GetObjectClass;
+    fake_jni_table[33] = (void*)jni_GetMethodID;
+    fake_jni_table[61] = (void*)jni_CallVoidMethod;
+    fake_jni_table[113] = (void*)jni_GetStaticMethodID;
+    fake_jni_table[114] = (void*)jni_CallStaticObjectMethod;
+    fake_jni_table[115] = (void*)jni_CallStaticObjectMethodV;
+    fake_jni_table[117] = (void*)jni_CallStaticBooleanMethod;
+    fake_jni_table[129] = (void*)jni_CallStaticIntMethod;
+    fake_jni_table[141] = (void*)jni_CallStaticVoidMethod;
+    fake_jni_table[167] = (void*)jni_NewStringUTF;
+    fake_jni_table[168] = (void*)jni_GetStringUTFLength;
+    fake_jni_table[169] = (void*)jni_GetStringUTFChars;
+    fake_jni_table[170] = (void*)jni_ReleaseStringUTFChars;
 
     for (int i = 0; i < 16; i++) fake_vm_table[i] = (void*)jni_GenericZero;
-    fake_vm_table = (void*)vm_AttachCurrentThread;
-    fake_vm_table = (void*)vm_DetachCurrentThread;
-    fake_vm_table = (void*)vm_GetEnv;
+    fake_vm_table[4] = (void*)vm_AttachCurrentThread;
+    fake_vm_table[5] = (void*)vm_DetachCurrentThread;
+    fake_vm_table[6] = (void*)vm_GetEnv;
 
     *out_vm = &global_vm;
     *out_env = &global_env;
