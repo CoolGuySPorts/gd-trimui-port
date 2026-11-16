@@ -9,15 +9,10 @@
 
 extern void *real_dlsym(void *handle, const char *name);
 __asm__(".symver real_dlsym, dlsym@GLIBC_2.17");
-
 extern void *real_dlopen(const char *filename, int flags);
 __asm__(".symver real_dlopen, dlopen@GLIBC_2.17");
 
-static void *h_libc = NULL;
-static void *h_libm = NULL;
-static void *h_libpthread = NULL;
-static void *h_libdl = NULL;
-static void *h_librt = NULL;
+static void *h_libc = NULL, *h_libm = NULL, *h_libpthread = NULL, *h_libdl = NULL, *h_librt = NULL;
 
 void* resolve_glibc_sym(const char *name) {
     if (!h_libc) {
@@ -33,7 +28,6 @@ void* resolve_glibc_sym(const char *name) {
     if (!sym && h_libpthread) sym = real_dlsym(h_libpthread, name);
     if (!sym && h_libdl) sym = real_dlsym(h_libdl, name);
     if (!sym && h_librt) sym = real_dlsym(h_librt, name);
-
     if (!sym && h_libc) {
         typedef int (*printf_t)(const char*, ...);
         typedef int (*fflush_t)(void*);
@@ -86,9 +80,7 @@ int gettid(void) {
 }
 
 void __FD_SET_chk(int fd, void *set, size_t set_size) {
-    if (fd >= 0 && (size_t)(fd / 8) < set_size) {
-        ((uint8_t*)set)[fd / 8] |= (1U << (fd % 8));
-    }
+    if (fd >= 0 && (size_t)(fd / 8) < set_size) ((uint8_t*)set)[fd / 8] |= (1U << (fd % 8));
 }
 
 void __assert2(const char *file, int line, const char *func, const char *expr) {
@@ -121,21 +113,16 @@ __attribute__((used, aligned(16))) char __sF[SF_BUF_SIZE] = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
-    __android_log_print(6, "STACK", "Stack smashing detected!");
     typedef void (*fn_t)(void);
     fn_t fn = (fn_t)resolve_glibc_sym("abort");
     if (fn) fn();
     while(1);
 }
 
-void android_set_abort_message(const char* msg) {
-    __android_log_print(6, "ABORT", "%s", msg ? msg : "unknown");
-}
-
+void android_set_abort_message(const char* msg) { __android_log_print(6, "ABORT", "%s", msg ? msg : "unknown"); }
 int __isnanf(float x) { return __builtin_isnan(x); }
 int __signbit(double x) { return __builtin_signbit(x); }
 size_t __ctype_get_mb_cur_max(void) { return 1; }
-
 void __cxa_pure_virtual_impl(void) { __stack_chk_fail(); }
 __asm__(".symver __cxa_pure_virtual_impl, __cxa_pure_virtual@@LIBC_O");
 
@@ -146,7 +133,6 @@ void* op_new_impl(size_t sz) {
     return fn ? fn(sz ? sz : 1) : NULL;
 }
 __asm__(".symver op_new_impl, _Znwm@@LIBC_O");
-
 void* op_new_arr_impl(size_t sz) { return op_new_impl(sz); }
 __asm__(".symver op_new_arr_impl, _Znam@@LIBC_O");
 
@@ -157,7 +143,6 @@ void op_del_impl(void *p) {
     if (fn && p) fn(p);
 }
 __asm__(".symver op_del_impl, _ZdlPv@@LIBC_O");
-
 void op_del_arr_impl(void *p) { op_del_impl(p); }
 __asm__(".symver op_del_arr_impl, _ZdaPv@@LIBC_O");
 
