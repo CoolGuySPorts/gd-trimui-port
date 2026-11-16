@@ -2,29 +2,51 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <pthread.h>
 
-#define RTLD_DEFAULT ((void *) 0)
+#define RTLD_LAZY 1
+#define RTLD_GLOBAL 0x00100
 
 extern void *real_dlsym(void *handle, const char *name);
 __asm__(".symver real_dlsym, dlsym@GLIBC_2.17");
 
+extern void *real_dlopen(const char *filename, int flags);
+__asm__(".symver real_dlopen, dlopen@GLIBC_2.17");
+
+static void *h_libc = NULL;
+static void *h_libm = NULL;
+static void *h_libpthread = NULL;
+
 void* resolve_glibc_sym(const char *name) {
-    return real_dlsym(RTLD_DEFAULT, name);
+    if (!h_libc) {
+        h_libc = real_dlopen("libc.so.6", RTLD_LAZY | RTLD_GLOBAL);
+        h_libm = real_dlopen("libm.so.6", RTLD_LAZY | RTLD_GLOBAL);
+        h_libpthread = real_dlopen("libpthread.so.0", RTLD_LAZY | RTLD_GLOBAL);
+    }
+    void *sym = NULL;
+    if (h_libc) sym = real_dlsym(h_libc, name);
+    if (!sym && h_libm) sym = real_dlsym(h_libm, name);
+    if (!sym && h_libpthread) sym = real_dlsym(h_libpthread, name);
+    return sym;
 }
 
 int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
     typedef int (*vprintf_t)(const char*, va_list);
     typedef int (*printf_t)(const char*, ...);
+    typedef int (*fflush_t)(void*);
     static vprintf_t fn_vp = NULL;
     static printf_t fn_p = NULL;
+    static fflush_t fn_fl = NULL;
     if (!fn_vp) fn_vp = (vprintf_t)resolve_glibc_sym("vprintf");
     if (!fn_p) fn_p = (printf_t)resolve_glibc_sym("printf");
+    if (!fn_fl) fn_fl = (fflush_t)resolve_glibc_sym("fflush");
     if (fn_p) fn_p("[%s] ", tag ? tag : "GD");
     va_list ap;
     va_start(ap, fmt);
     int r = fn_vp ? fn_vp(fmt, ap) : 0;
     va_end(ap);
     if (fn_p) fn_p("\n");
+    if (fn_fl) fn_fl(NULL);
     return r;
 }
 
@@ -60,21 +82,41 @@ void __assert2(const char *file, int line, const char *func, const char *expr) {
     while(1);
 }
 
+static pthread_mutex_t guard_mtx = PTHREAD_MUTEX_INITIALIZER;
+
 int cxa_guard_acq_impl(uint64_t *gv) {
-    if (*(uint8_t*)gv != 0) return 0;
+    typedef int (*lock_t)(pthread_mutex_t*);
+    typedef int (*unlock_t)(pthread_mutex_t*);
+    static lock_t fn_l = NULL;
+    static unlock_t fn_u = NULL;
+    if (!fn_l) fn_l = (lock_t)resolve_glibc_sym("pthread_mutex_lock");
+    if (!fn_u) fn_u = (unlock_t)resolve_glibc_sym("pthread_mutex_unlock");
+
+    if (__atomic_load_n((uint8_t*)gv, __ATOMIC_ACQUIRE) != 0) return 0;
+    if (fn_l) fn_l(&guard_mtx);
+    if (*(uint8_t*)gv != 0) {
+        if (fn_u) fn_u(&guard_mtx);
+        return 0;
+    }
     return 1;
 }
 __asm__(".symver cxa_guard_acq_impl, __cxa_guard_acquire@@LIBC_O");
 
 void cxa_guard_rel_impl(uint64_t *gv) {
-    *(uint8_t*)gv = 1;
+    typedef int (*unlock_t)(pthread_mutex_t*);
+    static unlock_t fn_u = NULL;
+    if (!fn_u) fn_u = (unlock_t)resolve_glibc_sym("pthread_mutex_unlock");
+
+    __atomic_store_n((uint8_t*)gv, 1, __ATOMIC_RELEASE);
+    if (fn_u) fn_u(&guard_mtx);
 }
 __asm__(".symver cxa_guard_rel_impl, __cxa_guard_release@@LIBC_O");
 
-__attribute__((used)) char __sF = {0};
+__attribute__((used, aligned(16))) char __sF = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
+    __android_log_print(6, "STACK", "Stack smashing detected!");
     typedef void (*fn_t)(void);
     fn_t fn = (fn_t)resolve_glibc_sym("abort");
     if (fn) fn();
@@ -147,7 +189,7 @@ int __cxa_thread_atexit_impl(void (*func)(void *), void *arg, void *dso_handle) 
         "adrp x17, .Lptr_" #sym "\n\tstr x16, [x17, :lo12:.Lptr_" #sym "]\n\t" \
         "ldp x0, x1, [sp, #16]\n\tldp x2, x3, [sp, #32]\n\tldp x4, x5, [sp, #48]\n\tldp x6, x7, [sp, #64]\n\tldr x8, [sp, #80]\n\t" \
         "ldp d0, d1, [sp, #96]\n\tldp d2, d3, [sp, #112]\n\tldp d4, d5, [sp, #128]\n\tldp d6, d7, [sp, #144]\n\t" \
-        "ldp x29, x30, [sp], #176\n\tcbz x16, 2f\n\tbr x16\n\t2: ret\n\t.popsection\n\t" \
+        "ldp x29, x30, [sp], #176\n\tcbz x16, 2f\n\tbr x16\n\t2: mov x0, #0\n\tret\n\t.popsection\n\t" \
     );
 
 #include "syms.def"
