@@ -5,6 +5,7 @@
 
 #define RTLD_LAZY 1
 #define RTLD_GLOBAL 0x00100
+#define SF_BUF_SIZE 512
 
 extern void *real_dlsym(void *handle, const char *name);
 __asm__(".symver real_dlsym, dlsym@GLIBC_2.17");
@@ -75,17 +76,6 @@ int __android_log_write(int prio, const char *tag, const char *text) {
     return __android_log_print(prio, tag, "%s", text ? text : "");
 }
 
-void __android_log_assert(const char *cond, const char *tag, const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    __android_log_vprint(6, tag ? tag : "ASSERT", fmt ? fmt : (cond ? cond : "assert"), ap);
-    va_end(ap);
-    typedef void (*fn_t)(void);
-    fn_t fn = (fn_t)resolve_glibc_sym("abort");
-    if (fn) fn();
-    while(1);
-}
-
 int* __errno(void) {
     typedef int* (*fn_t)(void);
     static fn_t fn = NULL;
@@ -114,8 +104,7 @@ void __assert2(const char *file, int line, const char *func, const char *expr) {
     while(1);
 }
 
-/* Потокобезопасные атомарные гарды C++ без зависимости от pthread */
-int __cxa_guard_acquire(uint64_t *gv) {
+int cxa_guard_acq_impl(uint64_t *gv) {
     uint8_t *b = (uint8_t*)gv;
     if (__atomic_load_n(b, __ATOMIC_ACQUIRE) == 1) return 0;
     uint8_t expected = 0;
@@ -126,16 +115,14 @@ int __cxa_guard_acquire(uint64_t *gv) {
     }
     return 1;
 }
+__asm__(".symver cxa_guard_acq_impl, __cxa_guard_acquire@@LIBC_O");
 
-void __cxa_guard_release(uint64_t *gv) {
+void cxa_guard_rel_impl(uint64_t *gv) {
     __atomic_store_n((uint8_t*)gv, 1, __ATOMIC_RELEASE);
 }
+__asm__(".symver cxa_guard_rel_impl, __cxa_guard_release@@LIBC_O");
 
-void __cxa_guard_abort(uint64_t *gv) {
-    __atomic_store_n((uint8_t*)gv, 0, __ATOMIC_RELEASE);
-}
-
-__attribute__((used, aligned(16))) char __sF = {0};
+__attribute__((used, aligned(16))) char __sF[SF_BUF_SIZE] = {0};
 uintptr_t __stack_chk_guard = 0x595e9fbd94fda766ULL;
 
 void __stack_chk_fail(void) {
@@ -154,80 +141,30 @@ int __isnanf(float x) { return __builtin_isnan(x); }
 int __signbit(double x) { return __builtin_signbit(x); }
 size_t __ctype_get_mb_cur_max(void) { return 1; }
 
-void __cxa_pure_virtual(void) { __stack_chk_fail(); }
+void __cxa_pure_virtual_impl(void) { __stack_chk_fail(); }
+__asm__(".symver __cxa_pure_virtual_impl, __cxa_pure_virtual@@LIBC_O");
 
-/* Полный набор C++ operator new / delete */
-void* _Znwm(size_t sz) {
+void* op_new_impl(size_t sz) {
     typedef void* (*malloc_t)(size_t);
     static malloc_t fn = NULL;
     if (!fn) fn = (malloc_t)resolve_glibc_sym("malloc");
     return fn ? fn(sz ? sz : 1) : NULL;
 }
+__asm__(".symver op_new_impl, _Znwm@@LIBC_O");
 
-void* _Znam(size_t sz) { return _Znwm(sz); }
-void* _ZnwmRKSt9nothrow_t(size_t sz, const void *nt) { (void)nt; return _Znwm(sz); }
-void* _ZnamRKSt9nothrow_t(size_t sz, const void *nt) { (void)nt; return _Znwm(sz); }
+void* op_new_arr_impl(size_t sz) { return op_new_impl(sz); }
+__asm__(".symver op_new_arr_impl, _Znam@@LIBC_O");
 
-void _ZdlPv(void *p) {
+void op_del_impl(void *p) {
     typedef void (*free_t)(void*);
     static free_t fn = NULL;
     if (!fn) fn = (free_t)resolve_glibc_sym("free");
     if (fn && p) fn(p);
 }
+__asm__(".symver op_del_impl, _ZdlPv@@LIBC_O");
 
-void _ZdaPv(void *p) { _ZdlPv(p); }
-void _ZdlPvm(void *p, size_t sz) { (void)sz; _ZdlPv(p); }
-void _ZdaPvm(void *p, size_t sz) { (void)sz; _ZdlPv(p); }
-
-/* Реализации BSD/Bionic функций, которых может не быть в glibc 2.27-2.31 */
-size_t strlcpy(char *dst, const char *src, size_t dsize) {
-    const char *osrc = src;
-    size_t nleft = dsize;
-    if (nleft != 0) {
-        while (--nleft != 0) {
-            if ((*dst++ = *src++) == '\0') break;
-        }
-    }
-    if (nleft == 0) {
-        if (dsize != 0) *dst = '\0';
-        while (*src++);
-    }
-    return (src - osrc - 1);
-}
-
-size_t strlcat(char *dst, const char *src, size_t dsize) {
-    const char *odst = dst;
-    const char *osrc = src;
-    size_t n = dsize;
-    while (n-- != 0 && *dst != '\0') dst++;
-    size_t dlen = dst - odst;
-    n = dsize - dlen;
-    if (n-- == 0) return (dlen + strlcpy((char*)"", src, 0));
-    while (*src != '\0') {
-        if (n != 0) { *dst++ = *src; n--; }
-        src++;
-    }
-    *dst = '\0';
-    return (dlen + (src - osrc));
-}
-
-static uint64_t rng_state = 0x123456789abcdef0ULL;
-uint32_t arc4random(void) {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 7;
-    rng_state ^= rng_state << 17;
-    return (uint32_t)(rng_state >> 32);
-}
-
-void arc4random_buf(void *buf, size_t nbytes) {
-    uint8_t *p = (uint8_t*)buf;
-    for (size_t i = 0; i < nbytes; i++) p[i] = (uint8_t)arc4random();
-}
-
-uint32_t arc4random_uniform(uint32_t upper_bound) {
-    if (upper_bound < 2) return 0;
-    return arc4random() % upper_bound;
-}
+void op_del_arr_impl(void *p) { op_del_impl(p); }
+__asm__(".symver op_del_arr_impl, _ZdaPv@@LIBC_O");
 
 void __cxa_finalize(void *d) {
     typedef void (*fn_t)(void*);
@@ -246,24 +183,3 @@ int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle) {
 int __cxa_thread_atexit_impl(void (*func)(void *), void *arg, void *dso_handle) {
     return __cxa_atexit(func, arg, dso_handle);
 }
-
-#define X(sym) \
-    __asm__( \
-        ".pushsection .bss\n\t.align 3\n\t.Lptr_" #sym ": .quad 0\n\t.popsection\n\t" \
-        ".pushsection .rodata\n\t.Lstr_" #sym ": .asciz \"" #sym "\"\n\t.popsection\n\t" \
-        ".pushsection .text\n\t.global " #sym "\n\t.type " #sym ", %function\n\t" \
-        #sym ":\n\t" \
-        "adrp x16, .Lptr_" #sym "\n\tldr x16, [x16, :lo12:.Lptr_" #sym "]\n\tcbz x16, 1f\n\tbr x16\n\t" \
-        "1:\n\tstp x29, x30, [sp, #-176]!\n\tmov x29, sp\n\t" \
-        "stp x0, x1, [sp, #16]\n\tstp x2, x3, [sp, #32]\n\tstp x4, x5, [sp, #48]\n\tstp x6, x7, [sp, #64]\n\tstr x8, [sp, #80]\n\t" \
-        "stp d0, d1, [sp, #96]\n\tstp d2, d3, [sp, #112]\n\tstp d4, d5, [sp, #128]\n\tstp d6, d7, [sp, #144]\n\t" \
-        "adrp x0, .Lstr_" #sym "\n\tadd x0, x0, :lo12:.Lstr_" #sym "\n\t" \
-        "bl resolve_glibc_sym\n\tmov x16, x0\n\t" \
-        "adrp x17, .Lptr_" #sym "\n\tstr x16, [x17, :lo12:.Lptr_" #sym "]\n\t" \
-        "ldp x0, x1, [sp, #16]\n\tldp x2, x3, [sp, #32]\n\tldp x4, x5, [sp, #48]\n\tldp x6, x7, [sp, #64]\n\tldr x8, [sp, #80]\n\t" \
-        "ldp d0, d1, [sp, #96]\n\tldp d2, d3, [sp, #112]\n\tldp d4, d5, [sp, #128]\n\tldp d6, d7, [sp, #144]\n\t" \
-        "ldp x29, x30, [sp], #176\n\tcbz x16, 2f\n\tbr x16\n\t2: mov x0, #0\n\tret\n\t.popsection\n\t" \
-    );
-
-#include "syms.def"
-#undef X
