@@ -8,6 +8,7 @@
 #include "fake_jni.h"
 
 typedef jint (*JNI_OnLoad_t)(JavaVM *vm, void *reserved);
+typedef void (*nativeSetApkPath_t)(JNIEnv *env, jobject thiz, jstring path);
 typedef void (*nativeInit_t)(JNIEnv *env, jobject thiz, jint w, jint h);
 typedef void (*nativeRender_t)(JNIEnv *env, jobject thiz);
 typedef void (*nativeTouchesBegin_t)(JNIEnv *env, jobject thiz, jint id, jfloat x, jfloat y);
@@ -70,6 +71,12 @@ int main(int argc, char *argv[]) {
     JNI_OnLoad_t on_load = (JNI_OnLoad_t)dlsym(gd_h, "JNI_OnLoad");
     if (on_load) on_load(vm, NULL);
     printf("[STEP 6 OK] JNI_OnLoad done!\n");
+
+    nativeSetApkPath_t nSetApk = (nativeSetApkPath_t)resolve_sym(gd_h, "Java_org_cocos2dx_lib_Cocos2dxHelper_nativeSetApkPath", NULL);
+    if (nSetApk) {
+        printf("[STEP 6.5] Setting APK path...\n");
+        nSetApk(env, NULL, (jstring)"./game.apk");
+    }
 
     nativeInit_t nInit = (nativeInit_t)resolve_sym(gd_h, "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeInit", NULL);
     nativeRender_t nRender = (nativeRender_t)resolve_sym(gd_h, "Java_org_cocos2dx_lib_Cocos2dxRenderer_nativeRender", NULL);
